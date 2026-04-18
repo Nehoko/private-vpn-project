@@ -1,0 +1,8 @@
+.DS_Store
+.env
+.env.local
+dist
+.build
+DerivedData
+coverage
+node_modules
