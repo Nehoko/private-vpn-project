@@ -9,7 +9,10 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
         static let apiBaseURL = "apiBaseURL"
         static let apiToken = "apiToken"
         static let hasSeenWelcome = "hasSeenWelcome"
+        static let deliveredNotifications = "deliveredNotifications"
     }
+    
+    private static let pollingIntervalNanoseconds: UInt64 = 21_600_000_000_000
 
     @Published var subscribers: [Subscriber] = []
     @Published var expiringSoon: [Subscriber] = []
@@ -24,6 +27,7 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     private let apiClient = APIClient()
     private let notificationsAvailable = Bundle.main.bundleURL.pathExtension == "app"
+    private var pollingTask: Task<Void, Never>?
 
     override init() {
         let defaults = UserDefaults.standard
@@ -80,6 +84,8 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
             isShowingConnectionSheet = true
         }
 
+        startPollingLoop()
+
         if notificationsAvailable {
             UNUserNotificationCenter.current().delegate = self
             _ = try? await UNUserNotificationCenter.current().requestAuthorization(
@@ -106,15 +112,12 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
             expiringSoon = bootstrap.expiringSoon
             lastRefresh = Self.formatTimestamp(bootstrap.generatedAt)
             syncSelection()
+            trimDeliveredNotifications()
+            await notifyDueSubscribers()
         } catch {
             lastError = error.localizedDescription
             print("Bootstrap failed:", error)
         }
-    }
-
-    func handleRemoteWake() async {
-        await refresh()
-        await notifyDueSubscribers()
     }
 
     func saveConnectionSettings() {
@@ -148,6 +151,11 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
 
         for subscriber in expiringSoon {
+            let notificationKey = notificationKey(for: subscriber)
+            if deliveredNotificationKeys.contains(notificationKey) {
+                continue
+            }
+
             let content = UNMutableNotificationContent()
             content.title = "VPN subscription needs attention"
             content.body = "@\(subscriber.telegramUsername) due \(subscriber.nextPayupDate)"
@@ -157,6 +165,7 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
                 trigger: nil
             )
             try? await UNUserNotificationCenter.current().add(request)
+            deliveredNotificationKeys.insert(notificationKey)
         }
     }
 
@@ -177,14 +186,55 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
     private static func formatTimestamp(_ input: String) -> String {
         let formatter = ISO8601DateFormatter()
         if let date = formatter.date(from: input) {
-            return DateFormatter.uiTimestamp.string(from: date)
+            return date.relativeRefreshLabel()
         }
         return input
+    }
+
+    private func startPollingLoop() {
+        pollingTask?.cancel()
+        pollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: Self.pollingIntervalNanoseconds)
+                } catch {
+                    break
+                }
+
+                guard !Task.isCancelled, let self else {
+                    break
+                }
+
+                await self.refresh()
+            }
+        }
+    }
+
+    private func notificationKey(for subscriber: Subscriber) -> String {
+        [subscriber.id, subscriber.nextPayupDate].joined(separator: ":")
+    }
+
+    private var deliveredNotificationKeys: Set<String> {
+        get {
+            Set(UserDefaults.standard.stringArray(forKey: Keys.deliveredNotifications) ?? [])
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue).sorted(), forKey: Keys.deliveredNotifications)
+        }
+    }
+
+    private func trimDeliveredNotifications() {
+        let activeKeys = Set(expiringSoon.map(notificationKey(for:)))
+        deliveredNotificationKeys = deliveredNotificationKeys.intersection(activeKeys)
     }
 
     private var shouldShowWelcome: Bool {
         let defaults = UserDefaults.standard
         let hasSeenWelcome = defaults.bool(forKey: Keys.hasSeenWelcome)
         return !hasSeenWelcome || !connectionSettings.canSave
+    }
+
+    deinit {
+        pollingTask?.cancel()
     }
 }

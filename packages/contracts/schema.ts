@@ -40,13 +40,6 @@ export interface SubscriptionReminderEvent {
   reminderKind: "d_minus_3" | "due_today";
 }
 
-export interface DeviceRegistration {
-  deviceId: string;
-  platform: "macos";
-  apnsToken: string;
-  userLabel?: string;
-}
-
 export interface BootstrapResponse {
   generatedAt: string;
   subscribers: Subscriber[];
@@ -66,7 +59,6 @@ export const Topics = {
   paymentsReceived: "payments.received",
   subscriptionsEvents: "subscriptions.events",
   notificationsEvents: "notifications.events",
-  devicesPush: "devices.push",
 } as const;
 
 export function ddmmyyyyToIso(input: string): string {

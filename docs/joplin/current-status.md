@@ -2,11 +2,10 @@
 
 ## Current status
 
-- process still manual
-- no server-side payment ingest yet
-- no subscriber system of record yet
-- no native admin app yet
-- no APNs push path yet
+- local stack works end-to-end with payment ingest, subscription renewal, admin bootstrap
+- Telegram bot webhook path implemented
+- wallet bridge webhook path implemented
+- native macOS admin app exists and polls every 6 hours while open
 
 ## Required subscriber fields
 
@@ -24,8 +23,11 @@
 - `telegram_id` is primary match key
 - `telegram_username` is fallback for manual reconciliation only
 - client keeps no open connection
-- server emits rare APNs-triggering events
+- client polls on launch, manual refresh, and every 6 hours
+- Telegram input paths:
+  - official bot payments webhook: `/webhooks/telegram-bot`
+  - wallet/manual bridge webhook: `/webhooks/telegram-wallet`
 
 ## Risk
 
-Main integration risk: official Telegram wallet support for exact personal-wallet incoming-payment callback flow still needs validation.
+Main integration risk: official Telegram support for exact personal-wallet incoming-wallet callback flow still not confirmed, so wallet bridge remains fallback path.

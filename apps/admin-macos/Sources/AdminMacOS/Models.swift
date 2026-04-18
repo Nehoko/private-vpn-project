@@ -78,13 +78,6 @@ struct BootstrapResponse: Codable {
     let cursor: String
 }
 
-struct DeviceRegistration: Codable {
-    let deviceId: String
-    let platform: String
-    let apnsToken: String
-    let userLabel: String?
-}
-
 struct ConnectionSettings {
     var baseURL: String
     var token: String
@@ -125,8 +118,32 @@ extension DateFormatter {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale.current
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
+        formatter.dateStyle = .none
+        formatter.timeStyle = .medium
         return formatter
     }()
+}
+
+extension Date {
+    func relativeRefreshLabel(now: Date = .now, calendar: Calendar = .current) -> String {
+        let timeLabel = DateFormatter.uiTimestamp.string(from: self)
+
+        if calendar.isDateInToday(self) {
+            return "today at \(timeLabel)"
+        }
+
+        if calendar.isDateInYesterday(self) {
+            return "yesterday at \(timeLabel)"
+        }
+
+        let startOfSelf = calendar.startOfDay(for: self)
+        let startOfNow = calendar.startOfDay(for: now)
+        let days = calendar.dateComponents([.day], from: startOfSelf, to: startOfNow).day ?? 0
+
+        if days > 1 {
+            return "\(days) days ago at \(timeLabel)"
+        }
+
+        return DateFormatter.uiDate.string(from: self) + " at " + timeLabel
+    }
 }

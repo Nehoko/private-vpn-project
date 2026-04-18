@@ -19,19 +19,20 @@
 - build `subscription-service`
 - build `api-gateway`
 - build `expiry-worker`
-- build `push-publisher`
+- add Telegram bot webhook auth
+- add wallet bridge auth
 
 ## Phase 4 - macOS app
 
 - native SwiftUI shell
 - bootstrap fetch on launch
-- APNs device registration
-- local state update after wake
+- local state update after scheduled refresh
+- 6-hour polling loop
 - native notifications for due subscribers
 
 ## Phase 5 - production hardening
 
 - replace in-memory scaffolding with real database persistence in services
-- add APNs JWT signing
 - add idempotency ledger for incoming payments
+- validate personal-wallet callback support or keep bridge adapter
 - add CI, secrets handling, and GitHub publication

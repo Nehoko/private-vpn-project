@@ -93,7 +93,7 @@ private struct SubscriberDetailView: View {
         }
 
         if isExpiringSoon {
-            return "Subscription needs attention soon. App will surface due-date notifications during refresh and APNs wake path."
+            return "Subscription needs attention soon. App checks backend every 6 hours and on manual refresh."
         }
 
         return "Subscription active. Renewal webhook path already updates due date through backend event flow."

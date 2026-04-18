@@ -5,22 +5,6 @@ actor APIClient {
         try await send(path: "/bootstrap", method: "GET", body: Optional<Data>.none, settings: settings)
     }
 
-    func registerDevice(apnsToken: String, settings: ConnectionSettings) async throws {
-        let payload = DeviceRegistration(
-            deviceId: Host.current().localizedName ?? UUID().uuidString,
-            platform: "macos",
-            apnsToken: apnsToken,
-            userLabel: Host.current().localizedName
-        )
-        let body = try JSONEncoder().encode(payload)
-        let _: EmptyResponse = try await send(
-            path: "/devices/register",
-            method: "POST",
-            body: body,
-            settings: settings
-        )
-    }
-
     private func send<T: Decodable>(
         path: String,
         method: String,
@@ -42,12 +26,6 @@ actor APIClient {
             throw URLError(.badServerResponse)
         }
 
-        if T.self == EmptyResponse.self {
-            return EmptyResponse() as! T
-        }
-
         return try JSONDecoder().decode(T.self, from: data)
     }
 }
-
-private struct EmptyResponse: Decodable {}

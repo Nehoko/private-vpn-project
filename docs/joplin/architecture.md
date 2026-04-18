@@ -8,7 +8,6 @@ Monorepo.
 - `apps/subscription-service`
 - `apps/api-gateway`
 - `apps/expiry-worker`
-- `apps/push-publisher`
 - `apps/admin-macos`
 - `packages/contracts`
 - `packages/kafka`
@@ -22,17 +21,17 @@ Monorepo.
 
 ## Runtime flow
 
-1. Telegram wallet webhook or bridge adapter sends payload to `payment-ingest`.
+1. Telegram bot payments webhook or wallet bridge adapter sends payload to `payment-ingest`.
 2. `payment-ingest` emits Kafka `payments.received`.
 3. `subscription-service` updates subscriber state and emits `subscriptions.events`.
 4. `expiry-worker` emits due-date notification events once per day.
-5. `push-publisher` sends APNs pushes to registered macOS devices.
-6. `admin-macos` wakes, fetches REST snapshot or deltas, updates UI, shows native notification.
+5. `api-gateway` exposes REST snapshot to admin client.
+6. `admin-macos` polls on launch, manual refresh, and every 6 hours, updates UI, shows native notification.
 
 ## Client design
 
 - native SwiftUI first
 - no persistent socket
 - no Kafka client in app
-- no client cron
-- low-power background behavior via APNs
+- no persistent open connection
+- 6-hour polling cadence for low background activity

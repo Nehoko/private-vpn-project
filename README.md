@@ -10,7 +10,6 @@ Public repository: <https://github.com/Nehoko/private-vpn-project>
 - `subscription-service`: Deno/TypeScript subscriber state + renewal logic
 - `api-gateway`: Deno/TypeScript admin bootstrap + delta API
 - `expiry-worker`: Deno/TypeScript daily due-date scan
-- `push-publisher`: Deno/TypeScript APNs push sender
 - `admin-macos`: native SwiftUI macOS app
 - `postgres`: source of truth
 - `redpanda`: Kafka-compatible event bus
@@ -44,7 +43,6 @@ curl -s http://127.0.0.1:8080/health
 curl -s http://127.0.0.1:8081/health
 curl -s http://127.0.0.1:8082/health
 curl -s http://127.0.0.1:8083/health
-curl -s http://127.0.0.1:8084/health
 ```
 
 4. Run macOS admin app.
@@ -54,7 +52,101 @@ cd apps/admin-macos
 swift run PrivateVPNAdmin
 ```
 
-App now shows first-launch popup for backend URL and admin token, so shell env vars are optional.
+App now shows first-launch popup for backend URL and admin token, so shell env vars are optional. App refreshes on launch, manual refresh, and every 6 hours while open.
+
+## Telegram connection
+
+Project supports 2 Telegram payment intake paths:
+
+1. official Telegram Bot Payments webhook
+2. authenticated wallet bridge webhook for personal-wallet/manual adapter flows
+
+### Required Telegram env vars
+
+```env
+TELEGRAM_BRIDGE_BEARER_TOKEN=change-me-telegram-bridge
+TELEGRAM_BOT_WEBHOOK_SECRET=change-me-telegram-bot-secret
+```
+
+### Official Telegram Bot Payments
+
+Official docs:
+
+- [Telegram Bot Payments](https://core.telegram.org/bots/payments)
+- [Telegram Bot API setWebhook](https://core.telegram.org/bots/api#setwebhook)
+
+Use this when payment comes through Telegram bot invoice flow and Telegram sends `successful_payment` updates to your server.
+
+1. Create bot in `@BotFather`.
+2. Connect payments provider in `Bot Settings -> Payments`.
+3. Set webhook to payment-ingest:
+
+```bash
+export TELEGRAM_BOT_TOKEN=123456:ABCDEF
+export PUBLIC_PAYMENT_INGEST_URL=https://vpn.example.com
+export TELEGRAM_BOT_WEBHOOK_SECRET=change-me-telegram-bot-secret
+
+curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -d "url=${PUBLIC_PAYMENT_INGEST_URL}/webhooks/telegram-bot" \
+  -d "secret_token=${TELEGRAM_BOT_WEBHOOK_SECRET}"
+```
+
+4. Telegram sends payment updates to `POST /webhooks/telegram-bot`.
+5. `payment-ingest` verifies header `X-Telegram-Bot-Api-Secret-Token`.
+6. Service parses `message.successful_payment` and emits `payments.received`.
+
+### Wallet bridge mode
+
+Stable official docs for direct callback on personal Telegram Wallet incoming USDT transfers were not confirmed during this implementation. Repo therefore supports bridge mode: small adapter receives wallet event, normalizes payload, sends it into `payment-ingest`.
+
+Endpoint:
+
+```txt
+POST /webhooks/telegram-wallet
+Authorization: Bearer $TELEGRAM_BRIDGE_BEARER_TOKEN
+```
+
+Payload example:
+
+```json
+{
+  "telegram_id": 123456789,
+  "telegram_username": "friend_name",
+  "amount": 5,
+  "asset": "USDT",
+  "external_payment_id": "wallet-transfer-001",
+  "paid_at": "2026-04-18T08:15:00Z"
+}
+```
+
+Quick local test:
+
+```bash
+curl -sS -X POST http://127.0.0.1:8081/webhooks/telegram-wallet \
+  -H "Authorization: Bearer change-me-telegram-bridge" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "telegram_id": 123456789,
+    "telegram_username": "friend_name",
+    "amount": 5,
+    "asset": "USDT",
+    "external_payment_id": "wallet-transfer-001",
+    "paid_at": "2026-04-18T08:15:00Z"
+  }'
+```
+
+## Workflow
+
+```mermaid
+flowchart LR
+    A["Friend pays 5 USDT in Telegram flow"] --> B["Telegram bot webhook or wallet bridge webhook"]
+    B --> C["payment-ingest validates secret/token"]
+    C --> D["Kafka topic payments.received"]
+    D --> E["subscription-service renews subscriber and updates payup date"]
+    E --> F["api-gateway exposes latest state via /bootstrap"]
+    F --> G["admin-macos polls on launch, manual refresh, or every 6 hours"]
+    G --> H["admin-macos UI shows updated subscriber state"]
+```
 
 ## Compose example
 
@@ -113,14 +205,9 @@ PAYMENT_INGEST_PORT=8081
 SUBSCRIPTION_SERVICE_PORT=8082
 API_GATEWAY_PORT=8080
 EXPIRY_WORKER_PORT=8083
-PUSH_PUBLISHER_PORT=8084
 API_GATEWAY_TOKEN=change-me
-APNS_KEY_ID=
-APNS_TEAM_ID=
-APNS_BUNDLE_ID=com.example.PrivateVPNAdmin
-APNS_AUTH_KEY_PEM=
-APNS_USE_SANDBOX=true
-TEST_APNS_DEVICE_TOKEN=
+TELEGRAM_BRIDGE_BEARER_TOKEN=change-me-telegram-bridge
+TELEGRAM_BOT_WEBHOOK_SECRET=change-me-telegram-bot-secret
 ```
 
 ## Releases
@@ -134,3 +221,5 @@ TEST_APNS_DEVICE_TOKEN=
 - local functional test complete
 - public GitHub repo available
 - release workflow ready for Docker images and macOS app packaging
+- Telegram bot webhook path implemented
+- 6-hour admin polling replaces APNs wake flow

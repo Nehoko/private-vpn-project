@@ -1,6 +1,5 @@
 import {
   type BootstrapResponse,
-  type DeviceRegistration,
   type EventEnvelope,
   type Subscriber,
 } from "@contracts/schema.ts";
@@ -9,7 +8,6 @@ const port = Number(Deno.env.get("API_GATEWAY_PORT") ?? "8080");
 const token = Deno.env.get("API_GATEWAY_TOKEN") ?? "change-me";
 const subscriptionServiceBase = Deno.env.get("SUBSCRIPTION_SERVICE_BASE_URL") ??
   "http://subscription-service:8082";
-const devices = new Map<string, DeviceRegistration>();
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -60,12 +58,6 @@ Deno.serve({ port }, async (request) => {
 
   if (!isAuthorized(request)) {
     return jsonResponse(401, { error: "unauthorized" });
-  }
-
-  if (request.method === "POST" && url.pathname === "/devices/register") {
-    const body = await request.json() as DeviceRegistration;
-    devices.set(body.deviceId, body);
-    return jsonResponse(201, { registered: true, deviceId: body.deviceId });
   }
 
   if (request.method === "GET" && url.pathname === "/bootstrap") {
