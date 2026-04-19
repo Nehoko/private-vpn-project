@@ -68,20 +68,7 @@ final class CalendarService {
         case .fullAccess, .writeOnly:
             return
         case .notDetermined:
-            let granted: Bool
-            if #available(macOS 14.0, *) {
-                granted = try await eventStore.requestFullAccessToEvents()
-            } else {
-                granted = try await withCheckedThrowingContinuation { continuation in
-                    eventStore.requestAccess(to: .event) { accessGranted, error in
-                        if let error {
-                            continuation.resume(throwing: error)
-                        } else {
-                            continuation.resume(returning: accessGranted)
-                        }
-                    }
-                }
-            }
+            let granted = try await requestAccess()
 
             if !granted {
                 throw CalendarServiceError.accessDenied
@@ -90,6 +77,28 @@ final class CalendarService {
             throw CalendarServiceError.accessDenied
         @unknown default:
             throw CalendarServiceError.accessDenied
+        }
+    }
+
+    private func requestAccess() async throws -> Bool {
+        try await withCheckedThrowingContinuation { continuation in
+            if #available(macOS 14.0, *) {
+                eventStore.requestFullAccessToEvents { accessGranted, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: accessGranted)
+                    }
+                }
+            } else {
+                eventStore.requestAccess(to: .event) { accessGranted, error in
+                    if let error {
+                        continuation.resume(throwing: error)
+                    } else {
+                        continuation.resume(returning: accessGranted)
+                    }
+                }
+            }
         }
     }
 }
