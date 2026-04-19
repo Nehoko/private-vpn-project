@@ -16,6 +16,15 @@ struct SubscriberEditorView: View {
                 DatePicker("Start date", selection: $state.editorDraft.startDate, displayedComponents: .date)
                 DatePicker("Next payup date", selection: $state.editorDraft.nextPayupDate, displayedComponents: .date)
                 Toggle("Active", isOn: $state.editorDraft.active)
+
+                Section("Calendar") {
+                    Text(state.editorDraft.active
+                        ? "Save creates or updates one-day all-day event in \(CalendarService.managedCalendarTitle) calendar with D-3 alert."
+                        : "Inactive subscriber removes reminder from \(CalendarService.managedCalendarTitle) calendar."
+                    )
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
 

@@ -19,6 +19,7 @@ Public repository: <https://github.com/Nehoko/private-vpn-project>
 4. App stores subscriber locally.
 5. App creates or updates Calendar event:
    - title: `@username subscription expiration`
+   - calendar: `Private VPN Admin`
    - alert: `D-3`
 
 Telegram Wallet API is closed for newcomers. No backend, no webhook, no Kafka, no server sync in this version.
@@ -49,10 +50,11 @@ Telegram Wallet API is closed for newcomers. No backend, no webhook, no Kafka, n
 
 App requests Calendar permission on first reminder sync.
 
-For active subscriber app creates event in default calendar:
+For active subscriber app creates event in app-managed `Private VPN Admin` calendar:
 
 - title: `@username subscription expiration`
 - event date: `next_payup_date`
+- all-day: `true`
 - alert: `3 days before`
 
 If subscriber becomes inactive or deleted, app removes linked calendar event.
@@ -125,4 +127,6 @@ flowchart LR
 - backend removed
 - full CRUD in macOS app
 - Calendar reminder integration implemented
+- app-managed `Private VPN Admin` calendar implemented
+- UI polished for release `v0.3.2`
 - DMG installer release flow implemented

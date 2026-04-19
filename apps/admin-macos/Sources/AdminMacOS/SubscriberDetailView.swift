@@ -94,10 +94,10 @@ private struct SubscriberDetailView: View {
         }
 
         if isExpiringSoon {
-            return "Subscription needs attention soon. Calendar event carries D-3 alert."
+            return "Subscription needs attention soon. Calendar event stays all-day on payup date with D-3 alert."
         }
 
-        return "Manual local flow. Edit subscriber anytime. Calendar event stays synced on save."
+        return "Manual local flow. Edit subscriber anytime. Event stays synced in \(CalendarService.managedCalendarTitle) calendar."
     }
 }
 

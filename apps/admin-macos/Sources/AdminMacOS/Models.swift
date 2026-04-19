@@ -1,5 +1,16 @@
 import Foundation
 
+enum BannerTone {
+    case success
+    case info
+}
+
+struct BannerMessage: Identifiable, Equatable {
+    let id = UUID()
+    let text: String
+    let tone: BannerTone
+}
+
 struct Subscriber: Codable, Identifiable, Equatable {
     let id: UUID
     var firstName: String
@@ -145,7 +156,11 @@ extension Subscriber {
     }
 
     var calendarStatusLabel: String {
-        calendarEventIdentifier == nil ? "Not synced" : "Synced"
+        if let calendarEventIdentifier, !calendarEventIdentifier.isEmpty {
+            return "\(CalendarService.managedCalendarTitle) calendar • all-day • D-3 alert"
+        }
+
+        return active ? "Not synced yet" : "Reminder removed"
     }
 
     func matches(searchText: String) -> Bool {

@@ -8,6 +8,7 @@ final class AppState: ObservableObject {
     @Published var subscribers: [Subscriber] = []
     @Published var searchText = ""
     @Published var lastError: String?
+    @Published var bannerMessage: BannerMessage?
     @Published var lastUpdate = "Never"
     @Published var selectedSubscriberID: UUID?
     @Published var selectedFilter: SubscriberFilter = .all
@@ -15,6 +16,7 @@ final class AppState: ObservableObject {
     @Published var editorMode: EditorMode = .create
     @Published var editorDraft = SubscriberDraft()
     @Published var isDeleteConfirmationPresented = false
+    @Published var isCalendarSyncing = false
 
     var filteredSubscribers: [Subscriber] {
         subscribers.filter { subscriber in
@@ -123,6 +125,7 @@ final class AppState: ObservableObject {
 
     func saveEditor() async {
         do {
+            let isCreating = editorMode == .create
             var subscriber = try editorDraft.buildSubscriber()
             let existingEventID = subscribers.first(where: { $0.id == subscriber.id })?.calendarEventIdentifier
             subscriber.calendarEventIdentifier = existingEventID ?? subscriber.calendarEventIdentifier
@@ -142,6 +145,12 @@ final class AppState: ObservableObject {
             upsert(subscriber)
             try persist()
             isShowingEditor = false
+            showBanner(
+                subscriber.active
+                    ? "\(isCreating ? "Subscriber added" : "Subscriber updated"). Calendar event synced to \(CalendarService.managedCalendarTitle)."
+                    : "\(isCreating ? "Subscriber added" : "Subscriber updated"). Reminder removed because subscriber inactive.",
+                tone: .success
+            )
         } catch {
             lastError = error.localizedDescription
         }
@@ -170,12 +179,16 @@ final class AppState: ObservableObject {
             try persist()
             syncSelection()
             isDeleteConfirmationPresented = false
+            showBanner("Subscriber deleted. Calendar reminder removed.", tone: .info)
         } catch {
             lastError = error.localizedDescription
         }
     }
 
     func syncCalendarEvents() async {
+        isCalendarSyncing = true
+        defer { isCalendarSyncing = false }
+
         do {
             var synced: [Subscriber] = []
 
@@ -191,9 +204,20 @@ final class AppState: ObservableObject {
 
             subscribers = synced.sorted(by: Self.sortSubscribers)
             try persist()
+            let activeSubscribers = synced.filter(\.active).count
+            showBanner(
+                activeSubscribers == 0
+                    ? "No active subscribers. \(CalendarService.managedCalendarTitle) calendar clean."
+                    : "Calendar synced for \(activeSubscribers) active subscriber\(activeSubscribers == 1 ? "" : "s") in \(CalendarService.managedCalendarTitle).",
+                tone: .success
+            )
         } catch {
             lastError = error.localizedDescription
         }
+    }
+
+    func dismissBanner() {
+        bannerMessage = nil
     }
 
     func selectFirstVisibleSubscriber() {
@@ -225,6 +249,10 @@ final class AppState: ObservableObject {
         let snapshot = try store.save(subscribers: subscribers.sorted(by: Self.sortSubscribers))
         subscribers = snapshot.subscribers.sorted(by: Self.sortSubscribers)
         lastUpdate = snapshot.updatedAt.relativeRefreshLabel()
+    }
+
+    private func showBanner(_ text: String, tone: BannerTone) {
+        bannerMessage = BannerMessage(text: text, tone: tone)
     }
 
     private static func sortSubscribers(lhs: Subscriber, rhs: Subscriber) -> Bool {

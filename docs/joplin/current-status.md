@@ -7,7 +7,12 @@
 - project is now local-only native macOS app
 - subscriber records stored in local JSON file
 - full CRUD implemented in app
-- Calendar reminder sync implemented with `D-3` alert
+- Calendar sync implemented in app-managed `Private VPN Admin` calendar with `D-3` alert
+- release polish done:
+  - cleaner toolbar
+  - no centered title bubble
+  - visible sync success banner
+  - all-day same-day calendar events
 - release packaging now builds macOS DMG installer
 
 ## Required subscriber fields
@@ -27,6 +32,8 @@
 - Calendar app is reminder system
 - each active subscriber maps to one Calendar event
 - event title format: `@username subscription expiration`
+- event calendar: `Private VPN Admin`
+- event shape: all-day, same payup date, `D-3` alert
 
 ## Risk
 

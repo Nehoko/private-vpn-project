@@ -13,13 +13,24 @@ struct ContentView: View {
         }
         .navigationSplitViewStyle(.balanced)
         .frame(minWidth: 1080, minHeight: 720)
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if let bannerMessage = state.bannerMessage {
+                BannerView(message: bannerMessage) {
+                    state.dismissBanner()
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 10)
+            }
+        }
         .toolbar {
-            ToolbarItemGroup {
+            ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     state.openCreateSubscriber()
                 } label: {
                     Label("Add", systemImage: "plus")
                 }
+                .labelStyle(.iconOnly)
+                .help("Add subscriber")
                 .keyboardShortcut("n", modifiers: [.command])
 
                 Button {
@@ -27,6 +38,8 @@ struct ContentView: View {
                 } label: {
                     Label("Edit", systemImage: "slider.horizontal.3")
                 }
+                .labelStyle(.iconOnly)
+                .help("Edit selected subscriber")
                 .disabled(!state.toolbarCanEdit)
 
                 Button {
@@ -34,30 +47,33 @@ struct ContentView: View {
                 } label: {
                     Label("Delete", systemImage: "trash")
                 }
+                .labelStyle(.iconOnly)
+                .help("Delete selected subscriber")
                 .disabled(!state.toolbarCanEdit)
+            }
 
-                Divider()
-
-                Picker("Filter", selection: $state.selectedFilter) {
-                    ForEach(SubscriberFilter.allCases) { filter in
-                        Label(filter.rawValue, systemImage: filter.symbolName)
-                            .tag(filter)
+            ToolbarItem {
+                Menu {
+                    Picker("Filter", selection: $state.selectedFilter) {
+                        ForEach(SubscriberFilter.allCases) { filter in
+                            Label(filter.rawValue, systemImage: filter.symbolName)
+                                .tag(filter)
+                        }
                     }
+                } label: {
+                    Label("Filter", systemImage: state.selectedFilter.symbolName)
                 }
-                .pickerStyle(.menu)
+                .help("Filter subscriber list")
+            }
 
+            ToolbarItem {
                 Button {
                     Task { await state.syncCalendarEvents() }
                 } label: {
-                    Label("Sync Calendar", systemImage: "calendar.badge.clock")
+                    Label("Sync Calendar", systemImage: state.isCalendarSyncing ? "arrow.trianglehead.2.clockwise.rotate.90" : "calendar.badge.clock")
                 }
-
-                Button {
-                    state.load()
-                } label: {
-                    Label("Reload", systemImage: "arrow.clockwise")
-                }
-                .keyboardShortcut("r", modifiers: [.command])
+                .help("Sync all reminders to \(CalendarService.managedCalendarTitle)")
+                .disabled(state.isCalendarSyncing)
             }
         }
         .onAppear {
@@ -80,6 +96,39 @@ struct ContentView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(state.deleteConfirmationMessage)
+        }
+    }
+}
+
+private struct BannerView: View {
+    let message: BannerMessage
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: message.tone == .success ? "checkmark.seal.fill" : "info.circle.fill")
+                .foregroundStyle(message.tone == .success ? .green : .blue)
+
+            Text(message.text)
+                .font(.callout)
+                .lineLimit(2)
+
+            Spacer(minLength: 0)
+
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder((message.tone == .success ? Color.green : Color.blue).opacity(0.18))
         }
     }
 }

@@ -4,6 +4,7 @@ import Foundation
 enum CalendarServiceError: LocalizedError {
     case accessDenied
     case defaultCalendarMissing
+    case calendarSourceMissing
 
     var errorDescription: String? {
         switch self {
@@ -11,13 +12,19 @@ enum CalendarServiceError: LocalizedError {
             return "Calendar access denied. Grant Calendar permission in System Settings."
         case .defaultCalendarMissing:
             return "No writable default calendar available."
+        case .calendarSourceMissing:
+            return "No writable calendar source available."
         }
     }
 }
 
 @MainActor
 final class CalendarService {
+    nonisolated static let managedCalendarTitle = "Private VPN Admin"
+
     private let eventStore = EKEventStore()
+    private let defaults = UserDefaults.standard
+    private let managedCalendarIdentifierKey = "managedCalendarIdentifier"
 
     func syncEvent(for subscriber: Subscriber) async throws -> String? {
         guard subscriber.active else {
@@ -28,9 +35,7 @@ final class CalendarService {
         try await ensureAccess()
 
         let event = subscriber.calendarEventIdentifier.flatMap(eventStore.event(withIdentifier:)) ?? EKEvent(eventStore: eventStore)
-        guard let calendar = eventStore.defaultCalendarForNewEvents else {
-            throw CalendarServiceError.defaultCalendarMissing
-        }
+        let calendar = try preferredCalendar()
 
         let startDate = Calendar.current.startOfDay(for: subscriber.nextPayupDate)
         event.calendar = calendar
@@ -81,24 +86,68 @@ final class CalendarService {
     }
 
     private func requestAccess() async throws -> Bool {
-        try await withCheckedThrowingContinuation { continuation in
+        let eventStore = self.eventStore
+        let handler = makeCalendarAccessHandler
+
+        return try await withCheckedThrowingContinuation { continuation in
             if #available(macOS 14.0, *) {
-                eventStore.requestFullAccessToEvents { accessGranted, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume(returning: accessGranted)
-                    }
-                }
+                eventStore.requestFullAccessToEvents(completion: handler(continuation))
             } else {
-                eventStore.requestAccess(to: .event) { accessGranted, error in
-                    if let error {
-                        continuation.resume(throwing: error)
-                    } else {
-                        continuation.resume(returning: accessGranted)
-                    }
-                }
+                eventStore.requestAccess(to: .event, completion: handler(continuation))
             }
+        }
+    }
+
+    private func preferredCalendar() throws -> EKCalendar {
+        if let identifier = defaults.string(forKey: managedCalendarIdentifierKey),
+           let calendar = eventStore.calendar(withIdentifier: identifier),
+           calendar.allowsContentModifications {
+            return calendar
+        }
+
+        if let existingCalendar = eventStore.calendars(for: .event).first(where: {
+            $0.title == Self.managedCalendarTitle && $0.allowsContentModifications
+        }) {
+            defaults.set(existingCalendar.calendarIdentifier, forKey: managedCalendarIdentifierKey)
+            return existingCalendar
+        }
+
+        let calendar = EKCalendar(for: .event, eventStore: eventStore)
+        guard let source = writableSource() else {
+            throw CalendarServiceError.calendarSourceMissing
+        }
+
+        calendar.title = Self.managedCalendarTitle
+        calendar.source = source
+        try eventStore.saveCalendar(calendar, commit: true)
+        defaults.set(calendar.calendarIdentifier, forKey: managedCalendarIdentifierKey)
+        return calendar
+    }
+
+    private func writableSource() -> EKSource? {
+        if let source = eventStore.defaultCalendarForNewEvents?.source {
+            return source
+        }
+
+        let preferredTypes: [EKSourceType] = [.local, .calDAV, .exchange, .mobileMe]
+        for sourceType in preferredTypes {
+            if let source = eventStore.sources.first(where: { $0.sourceType == sourceType }) {
+                return source
+            }
+        }
+
+        return eventStore.sources.first
+    }
+}
+
+private func makeCalendarAccessHandler(
+    _ continuation: CheckedContinuation<Bool, Error>
+) -> @Sendable (Bool, Error?) -> Void {
+    { accessGranted, error in
+        if let error {
+            continuation.resume(throwing: error)
+        } else {
+            continuation.resume(returning: accessGranted)
         }
     }
 }
