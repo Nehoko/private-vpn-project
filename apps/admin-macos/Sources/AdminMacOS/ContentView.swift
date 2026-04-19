@@ -12,14 +12,31 @@ struct ContentView: View {
                 .environmentObject(state)
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1080, minHeight: 680)
+        .frame(minWidth: 1080, minHeight: 720)
         .toolbar {
             ToolbarItemGroup {
                 Button {
-                    state.openConnectionSettings()
+                    state.openCreateSubscriber()
                 } label: {
-                    Label("Connection", systemImage: "server.rack")
+                    Label("Add", systemImage: "plus")
                 }
+                .keyboardShortcut("n", modifiers: [.command])
+
+                Button {
+                    state.openEditSubscriber()
+                } label: {
+                    Label("Edit", systemImage: "slider.horizontal.3")
+                }
+                .disabled(!state.toolbarCanEdit)
+
+                Button {
+                    state.promptDeleteSelected()
+                } label: {
+                    Label("Delete", systemImage: "trash")
+                }
+                .disabled(!state.toolbarCanEdit)
+
+                Divider()
 
                 Picker("Filter", selection: $state.selectedFilter) {
                     ForEach(SubscriberFilter.allCases) { filter in
@@ -30,12 +47,17 @@ struct ContentView: View {
                 .pickerStyle(.menu)
 
                 Button {
-                    Task { await state.refresh() }
+                    Task { await state.syncCalendarEvents() }
                 } label: {
-                    Label(state.isRefreshing ? "Refreshing" : "Refresh", systemImage: "arrow.clockwise")
+                    Label("Sync Calendar", systemImage: "calendar.badge.clock")
+                }
+
+                Button {
+                    state.load()
+                } label: {
+                    Label("Reload", systemImage: "arrow.clockwise")
                 }
                 .keyboardShortcut("r", modifiers: [.command])
-                .disabled(state.isRefreshing)
             }
         }
         .onAppear {
@@ -44,9 +66,20 @@ struct ContentView: View {
         .onChange(of: state.selectedFilter) { _, _ in
             state.selectFirstVisibleSubscriber()
         }
-        .sheet(isPresented: $state.isShowingConnectionSheet) {
-            ConnectionSettingsView()
+        .sheet(isPresented: $state.isShowingEditor) {
+            SubscriberEditorView()
                 .environmentObject(state)
+        }
+        .alert(
+            state.deleteConfirmationTitle,
+            isPresented: $state.isDeleteConfirmationPresented
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await state.deleteSelectedSubscriber() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(state.deleteConfirmationMessage)
         }
     }
 }

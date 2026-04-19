@@ -1,13 +1,15 @@
 # Private VPN Project - Sources
 
-## Official docs
+## Product source
 
-- Telegram Bot Payments: <https://core.telegram.org/bots/payments>
-- Telegram Bot API `setWebhook`: <https://core.telegram.org/bots/api#setwebhook>
-- Wallet Pay portal: <https://pay.wallet.tg/>
+- operator decision on `2026-04-19`: Telegram wallet API closed for newcomers, move to manual local flow
+
+## Platform source
+
+- Apple EventKit documentation
+- SwiftUI macOS app runtime
 
 ## Source note
 
-- Bot Payments documentation is official and clear for bot-driven merchant payments.
-- Direct official callback docs for personal Telegram Wallet incoming `USDT` transfer were not confirmed during implementation.
-- If official callback/webhook support is absent for personal-wallet receipts, use explicit bridge adapter or operator-confirmed intake path.
+- project no longer depends on Telegram callback documentation
+- manual update path is intentional, not temporary scaffold

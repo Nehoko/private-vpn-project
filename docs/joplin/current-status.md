@@ -2,32 +2,33 @@
 
 ## Current status
 
-- local stack works end-to-end with payment ingest, subscription renewal, admin bootstrap
-- Telegram bot webhook path implemented
-- wallet bridge webhook path implemented
-- native macOS admin app exists and polls every 6 hours while open
+- Telegram wallet automation dropped because wallet API is closed for newcomers
+- backend removed
+- project is now local-only native macOS app
+- subscriber records stored in local JSON file
+- full CRUD implemented in app
+- Calendar reminder sync implemented with `D-3` alert
+- release packaging now builds macOS DMG installer
 
 ## Required subscriber fields
 
 - `first_name`
 - `last_name` optional
-- `telegram_username` required
-- `telegram_id` required
-- `start_date` required, input/output `dd.mm.yyyy`
-- `next_payup_date` required, input/output `dd.mm.yyyy`
-- `active` required boolean
+- `telegram_username`
+- `telegram_id`
+- `start_date`
+- `next_payup_date`
+- `active`
 
 ## Current technical assumptions
 
-- backend stores dates as ISO `YYYY-MM-DD`
-- `telegram_id` is primary match key
-- `telegram_username` is fallback for manual reconciliation only
-- client keeps no open connection
-- client polls on launch, manual refresh, and every 6 hours
-- Telegram input paths:
-  - official bot payments webhook: `/webhooks/telegram-bot`
-  - wallet/manual bridge webhook: `/webhooks/telegram-wallet`
+- app is source of truth
+- persistence path: `~/Library/Application Support/PrivateVPNAdmin/subscribers.json`
+- Calendar app is reminder system
+- each active subscriber maps to one Calendar event
+- event title format: `@username subscription expiration`
 
 ## Risk
 
-Main integration risk: official Telegram support for exact personal-wallet incoming-wallet callback flow still not confirmed, so wallet bridge remains fallback path.
+- Calendar permission may be denied by user
+- installer is unsigned DMG, not notarized

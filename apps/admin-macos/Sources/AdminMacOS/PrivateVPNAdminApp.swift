@@ -14,6 +14,7 @@ struct PrivateVPNAdminApp: App {
                     await state.start()
                 }
         }
+        .defaultSize(width: 1180, height: 760)
     }
 }
 

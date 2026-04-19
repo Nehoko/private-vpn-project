@@ -1,45 +1,20 @@
-import AppKit
 import Foundation
-import SwiftUI
-import UserNotifications
 
 @MainActor
-final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
-    private enum Keys {
-        static let apiBaseURL = "apiBaseURL"
-        static let apiToken = "apiToken"
-        static let hasSeenWelcome = "hasSeenWelcome"
-        static let deliveredNotifications = "deliveredNotifications"
-    }
-    
-    private static let pollingIntervalNanoseconds: UInt64 = 21_600_000_000_000
+final class AppState: ObservableObject {
+    private let store = SubscriberStore()
+    private let calendarService = CalendarService()
 
     @Published var subscribers: [Subscriber] = []
-    @Published var expiringSoon: [Subscriber] = []
     @Published var searchText = ""
-    @Published var lastRefresh: String = "Never"
-    @Published var selectedSubscriberID: String?
-    @Published var selectedFilter: SubscriberFilter = .all
-    @Published var isRefreshing = false
     @Published var lastError: String?
-    @Published var isShowingConnectionSheet = false
-    @Published var connectionSettings: ConnectionSettings
-
-    private let apiClient = APIClient()
-    private let notificationsAvailable = Bundle.main.bundleURL.pathExtension == "app"
-    private var pollingTask: Task<Void, Never>?
-
-    override init() {
-        let defaults = UserDefaults.standard
-        let defaultBaseURL = ProcessInfo.processInfo.environment["API_BASE_URL"] ?? "http://127.0.0.1:8080"
-        let defaultToken = ProcessInfo.processInfo.environment["API_TOKEN"] ?? "change-me"
-
-        self.connectionSettings = ConnectionSettings(
-            baseURL: defaults.string(forKey: Keys.apiBaseURL) ?? defaultBaseURL,
-            token: defaults.string(forKey: Keys.apiToken) ?? defaultToken
-        )
-        super.init()
-    }
+    @Published var lastUpdate = "Never"
+    @Published var selectedSubscriberID: UUID?
+    @Published var selectedFilter: SubscriberFilter = .all
+    @Published var isShowingEditor = false
+    @Published var editorMode: EditorMode = .create
+    @Published var editorDraft = SubscriberDraft()
+    @Published var isDeleteConfirmationPresented = false
 
     var filteredSubscribers: [Subscriber] {
         subscribers.filter { subscriber in
@@ -67,7 +42,17 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
         return subscribers.first { $0.id == selectedSubscriberID }
     }
 
-    var expiringSoonIDs: Set<String> {
+    var expiringSoon: [Subscriber] {
+        subscribers.filter { subscriber in
+            guard subscriber.active else {
+                return false
+            }
+            let days = subscriber.nextPayupDate.daysUntil()
+            return days >= 0 && days <= 3
+        }
+    }
+
+    var expiringSoonIDs: Set<UUID> {
         Set(expiringSoon.map(\.id))
     }
 
@@ -79,93 +64,135 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
         subscribers.count - activeCount
     }
 
-    func start() async {
-        if shouldShowWelcome {
-            isShowingConnectionSheet = true
-        }
-
-        startPollingLoop()
-
-        if notificationsAvailable {
-            UNUserNotificationCenter.current().delegate = self
-            _ = try? await UNUserNotificationCenter.current().requestAuthorization(
-                options: [.alert, .sound, .badge]
-            )
-        }
-        await refresh()
+    var lastUpdateLabel: String {
+        "Last update: \(lastUpdate)"
     }
 
-    func refresh() async {
-        guard connectionSettings.canSave else {
-            lastError = "Set API URL and token before refresh."
-            isShowingConnectionSheet = true
-            return
+    var deleteConfirmationTitle: String {
+        guard let selectedSubscriber else {
+            return "Delete subscriber"
         }
+        return "Delete \(selectedSubscriber.displayName)?"
+    }
 
-        isRefreshing = true
+    var deleteConfirmationMessage: String {
+        "Subscriber record deleted. Calendar reminder removed too."
+    }
+
+    var toolbarCanEdit: Bool {
+        selectedSubscriber != nil
+    }
+
+    func start() async {
+        load()
+    }
+
+    func load() {
         lastError = nil
-        defer { isRefreshing = false }
 
         do {
-            let bootstrap = try await apiClient.bootstrap(settings: connectionSettings)
-            subscribers = bootstrap.subscribers
-            expiringSoon = bootstrap.expiringSoon
-            lastRefresh = Self.formatTimestamp(bootstrap.generatedAt)
+            let snapshot = try store.load()
+            subscribers = snapshot.subscribers.sorted(by: Self.sortSubscribers)
+            lastUpdate = snapshot.updatedAt.relativeRefreshLabel()
             syncSelection()
-            trimDeliveredNotifications()
-            await notifyDueSubscribers()
         } catch {
             lastError = error.localizedDescription
-            print("Bootstrap failed:", error)
         }
     }
 
-    func saveConnectionSettings() {
-        guard connectionSettings.canSave else {
-            lastError = "Enter valid API URL and token."
+    func openCreateSubscriber() {
+        editorMode = .create
+        editorDraft = SubscriberDraft()
+        isShowingEditor = true
+    }
+
+    func openEditSubscriber() {
+        guard let subscriber = selectedSubscriber else {
+            lastError = "Select subscriber first."
             return
         }
 
-        let defaults = UserDefaults.standard
-        defaults.set(connectionSettings.sanitizedBaseURL, forKey: Keys.apiBaseURL)
-        defaults.set(connectionSettings.sanitizedToken, forKey: Keys.apiToken)
-        defaults.set(true, forKey: Keys.hasSeenWelcome)
-        connectionSettings = ConnectionSettings(
-            baseURL: connectionSettings.sanitizedBaseURL,
-            token: connectionSettings.sanitizedToken
-        )
-        isShowingConnectionSheet = false
-
-        Task {
-            await refresh()
-        }
+        editorMode = .edit
+        editorDraft = SubscriberDraft(subscriber: subscriber)
+        isShowingEditor = true
     }
 
-    func openConnectionSettings() {
-        isShowingConnectionSheet = true
+    func closeEditor() {
+        isShowingEditor = false
     }
 
-    private func notifyDueSubscribers() async {
-        guard notificationsAvailable else {
-            return
-        }
+    func saveEditor() async {
+        do {
+            var subscriber = try editorDraft.buildSubscriber()
+            let existingEventID = subscribers.first(where: { $0.id == subscriber.id })?.calendarEventIdentifier
+            subscriber.calendarEventIdentifier = existingEventID ?? subscriber.calendarEventIdentifier
 
-        for subscriber in expiringSoon {
-            let notificationKey = notificationKey(for: subscriber)
-            if deliveredNotificationKeys.contains(notificationKey) {
-                continue
+            do {
+                if subscriber.active {
+                    subscriber.calendarEventIdentifier = try await calendarService.syncEvent(for: subscriber)
+                } else {
+                    try await calendarService.removeEvent(identifier: subscriber.calendarEventIdentifier)
+                    subscriber.calendarEventIdentifier = nil
+                }
+            } catch {
+                subscriber.calendarEventIdentifier = nil
+                lastError = "Subscriber saved, but Calendar sync failed: \(error.localizedDescription)"
             }
 
-            let content = UNMutableNotificationContent()
-            content.title = "VPN subscription needs attention"
-            content.body = "@\(subscriber.telegramUsername) due \(subscriber.nextPayupDate)"
-            let request = UNNotificationRequest(
-                identifier: "subscriber-\(subscriber.id)",
-                content: content,
-                trigger: nil
-            )
-            try? await UNUserNotificationCenter.current().add(request)
-            deliveredNotificationKeys.insert(notificationKey)
+            upsert(subscriber)
+            try persist()
+            isShowingEditor = false
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func promptDeleteSelected() {
+        guard selectedSubscriber != nil else {
+            lastError = "Select subscriber first."
+            return
+        }
+        isDeleteConfirmationPresented = true
+    }
+
+    func deleteSelectedSubscriber() async {
+        guard let subscriber = selectedSubscriber else {
+            return
+        }
+
+        do {
+            do {
+                try await calendarService.removeEvent(identifier: subscriber.calendarEventIdentifier)
+            } catch {
+                lastError = "Subscriber deleted, but Calendar cleanup failed: \(error.localizedDescription)"
+            }
+            subscribers.removeAll { $0.id == subscriber.id }
+            try persist()
+            syncSelection()
+            isDeleteConfirmationPresented = false
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func syncCalendarEvents() async {
+        do {
+            var synced: [Subscriber] = []
+
+            for var subscriber in subscribers {
+                if subscriber.active {
+                    subscriber.calendarEventIdentifier = try await calendarService.syncEvent(for: subscriber)
+                } else {
+                    try await calendarService.removeEvent(identifier: subscriber.calendarEventIdentifier)
+                    subscriber.calendarEventIdentifier = nil
+                }
+                synced.append(subscriber)
+            }
+
+            subscribers = synced.sorted(by: Self.sortSubscribers)
+            try persist()
+        } catch {
+            lastError = error.localizedDescription
         }
     }
 
@@ -183,58 +210,32 @@ final class AppState: NSObject, ObservableObject, UNUserNotificationCenterDelega
         selectedSubscriberID = filteredSubscribers.first?.id ?? subscribers.first?.id
     }
 
-    private static func formatTimestamp(_ input: String) -> String {
-        let formatter = ISO8601DateFormatter()
-        if let date = formatter.date(from: input) {
-            return date.relativeRefreshLabel()
+    private func upsert(_ subscriber: Subscriber) {
+        if let index = subscribers.firstIndex(where: { $0.id == subscriber.id }) {
+            subscribers[index] = subscriber
+        } else {
+            subscribers.append(subscriber)
         }
-        return input
+
+        subscribers.sort(by: Self.sortSubscribers)
+        selectedSubscriberID = subscriber.id
     }
 
-    private func startPollingLoop() {
-        pollingTask?.cancel()
-        pollingTask = Task { [weak self] in
-            while !Task.isCancelled {
-                do {
-                    try await Task.sleep(nanoseconds: Self.pollingIntervalNanoseconds)
-                } catch {
-                    break
-                }
+    private func persist() throws {
+        let snapshot = try store.save(subscribers: subscribers.sorted(by: Self.sortSubscribers))
+        subscribers = snapshot.subscribers.sorted(by: Self.sortSubscribers)
+        lastUpdate = snapshot.updatedAt.relativeRefreshLabel()
+    }
 
-                guard !Task.isCancelled, let self else {
-                    break
-                }
-
-                await self.refresh()
-            }
+    private static func sortSubscribers(lhs: Subscriber, rhs: Subscriber) -> Bool {
+        if lhs.active != rhs.active {
+            return lhs.active && !rhs.active
         }
-    }
 
-    private func notificationKey(for subscriber: Subscriber) -> String {
-        [subscriber.id, subscriber.nextPayupDate].joined(separator: ":")
-    }
-
-    private var deliveredNotificationKeys: Set<String> {
-        get {
-            Set(UserDefaults.standard.stringArray(forKey: Keys.deliveredNotifications) ?? [])
+        if lhs.nextPayupDate != rhs.nextPayupDate {
+            return lhs.nextPayupDate < rhs.nextPayupDate
         }
-        set {
-            UserDefaults.standard.set(Array(newValue).sorted(), forKey: Keys.deliveredNotifications)
-        }
-    }
 
-    private func trimDeliveredNotifications() {
-        let activeKeys = Set(expiringSoon.map(notificationKey(for:)))
-        deliveredNotificationKeys = deliveredNotificationKeys.intersection(activeKeys)
-    }
-
-    private var shouldShowWelcome: Bool {
-        let defaults = UserDefaults.standard
-        let hasSeenWelcome = defaults.bool(forKey: Keys.hasSeenWelcome)
-        return !hasSeenWelcome || !connectionSettings.canSave
-    }
-
-    deinit {
-        pollingTask?.cancel()
+        return lhs.displayName.localizedCaseInsensitiveCompare(rhs.displayName) == .orderedAscending
     }
 }

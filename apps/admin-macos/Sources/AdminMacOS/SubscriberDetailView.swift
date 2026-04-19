@@ -9,13 +9,13 @@ struct SubscriberDetailContainer: View {
                 SubscriberDetailView(
                     subscriber: subscriber,
                     isExpiringSoon: state.expiringSoonIDs.contains(subscriber.id),
-                    lastRefresh: state.lastRefresh
+                    lastUpdate: state.lastUpdate
                 )
             } else {
                 ContentUnavailableView(
                     "No Selection",
                     systemImage: "sidebar.right",
-                    description: Text("Pick subscriber from sidebar to inspect subscription state.")
+                    description: Text("Pick subscriber from sidebar or create new one.")
                 )
             }
         }
@@ -25,7 +25,7 @@ struct SubscriberDetailContainer: View {
 private struct SubscriberDetailView: View {
     let subscriber: Subscriber
     let isExpiringSoon: Bool
-    let lastRefresh: String
+    let lastUpdate: String
 
     var body: some View {
         ScrollView {
@@ -38,7 +38,7 @@ private struct SubscriberDetailView: View {
                     MetricCard(title: "Next Payup", value: subscriber.dueDateLabel, accent: isExpiringSoon ? .orange : .blue)
                     MetricCard(title: "Started", value: subscriber.startDateLabel, accent: .secondary)
                     MetricCard(title: "Telegram", value: "#\(subscriber.telegramId)", accent: .mint)
-                    MetricCard(title: "Refresh", value: lastRefresh, accent: .secondary)
+                    MetricCard(title: "Last update", value: lastUpdate, accent: .secondary)
                 }
 
                 detailCard
@@ -82,6 +82,7 @@ private struct SubscriberDetailView: View {
             DetailRow(label: "Start date", value: subscriber.startDateLabel)
             DetailRow(label: "Next payup", value: subscriber.dueDateLabel)
             DetailRow(label: "Activity", value: subscriber.active ? "Active" : "Inactive")
+            DetailRow(label: "Calendar", value: subscriber.calendarStatusLabel)
         }
         .padding(18)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -89,14 +90,14 @@ private struct SubscriberDetailView: View {
 
     private var summaryText: String {
         if !subscriber.active {
-            return "Subscriber currently inactive. No renewal notifications should fire until reactivated."
+            return "Subscriber inactive. Calendar reminder removed until reactivated."
         }
 
         if isExpiringSoon {
-            return "Subscription needs attention soon. App checks backend every 6 hours and on manual refresh."
+            return "Subscription needs attention soon. Calendar event carries D-3 alert."
         }
 
-        return "Subscription active. Renewal webhook path already updates due date through backend event flow."
+        return "Manual local flow. Edit subscriber anytime. Calendar event stays synced on save."
     }
 }
 

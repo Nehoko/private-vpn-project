@@ -8,9 +8,11 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 ICONSET_DIR="$ROOT_DIR/dist/PrivateVPNAdmin.iconset"
 ICNS_PATH="$RESOURCES_DIR/AppIcon.icns"
+DMG_STAGING_DIR="$ROOT_DIR/dist/dmg"
+DMG_PATH="$ROOT_DIR/dist/PrivateVPNAdmin.dmg"
 
 mkdir -p "$ROOT_DIR/dist"
-rm -rf "$APP_DIR" "$ICONSET_DIR" "$ROOT_DIR/dist/PrivateVPNAdmin.app.zip"
+rm -rf "$APP_DIR" "$ICONSET_DIR" "$DMG_STAGING_DIR" "$DMG_PATH"
 
 pushd "$ROOT_DIR/apps/admin-macos" >/dev/null
 swift build -c release
@@ -24,8 +26,15 @@ cp "$ROOT_DIR/apps/admin-macos/Support/Info.plist" "$CONTENTS_DIR/Info.plist"
 swift "$ROOT_DIR/scripts/render_app_icon.swift" "$ICONSET_DIR"
 iconutil -c icns "$ICONSET_DIR" -o "$ICNS_PATH"
 
-pushd "$ROOT_DIR/dist" >/dev/null
-ditto -c -k --sequesterRsrc --keepParent PrivateVPNAdmin.app PrivateVPNAdmin.app.zip
-popd >/dev/null
+mkdir -p "$DMG_STAGING_DIR"
+cp -R "$APP_DIR" "$DMG_STAGING_DIR/PrivateVPNAdmin.app"
+ln -s /Applications "$DMG_STAGING_DIR/Applications"
 
-echo "Created $ROOT_DIR/dist/PrivateVPNAdmin.app.zip"
+hdiutil create \
+  -volname "PrivateVPNAdmin Installer" \
+  -srcfolder "$DMG_STAGING_DIR" \
+  -ov \
+  -format UDZO \
+  "$DMG_PATH"
+
+echo "Created $DMG_PATH"

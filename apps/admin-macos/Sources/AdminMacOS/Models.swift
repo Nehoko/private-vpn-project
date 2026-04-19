@@ -1,14 +1,20 @@
 import Foundation
 
-struct Subscriber: Codable, Identifiable {
-    let id: String
-    let firstName: String
-    let lastName: String?
-    let telegramUsername: String
-    let telegramId: Int
-    let startDate: String
-    let nextPayupDate: String
-    let active: Bool
+struct Subscriber: Codable, Identifiable, Equatable {
+    let id: UUID
+    var firstName: String
+    var lastName: String?
+    var telegramUsername: String
+    var telegramId: Int
+    var startDate: Date
+    var nextPayupDate: Date
+    var active: Bool
+    var calendarEventIdentifier: String?
+}
+
+struct PersistenceSnapshot: Codable {
+    var updatedAt: Date
+    var subscribers: [Subscriber]
 }
 
 enum SubscriberFilter: String, CaseIterable, Identifiable {
@@ -33,30 +39,113 @@ enum SubscriberFilter: String, CaseIterable, Identifiable {
     }
 }
 
+enum EditorMode: String {
+    case create = "New Subscriber"
+    case edit = "Edit Subscriber"
+}
+
+struct SubscriberDraft {
+    var id: UUID?
+    var firstName = ""
+    var lastName = ""
+    var telegramUsername = ""
+    var telegramId = ""
+    var startDate = Date()
+    var nextPayupDate = Date()
+    var active = true
+    var calendarEventIdentifier: String?
+
+    init() {}
+
+    init(subscriber: Subscriber) {
+        id = subscriber.id
+        firstName = subscriber.firstName
+        lastName = subscriber.lastName ?? ""
+        telegramUsername = subscriber.normalizedTelegramUsername
+        telegramId = String(subscriber.telegramId)
+        startDate = subscriber.startDate
+        nextPayupDate = subscriber.nextPayupDate
+        active = subscriber.active
+        calendarEventIdentifier = subscriber.calendarEventIdentifier
+    }
+
+    func buildSubscriber() throws -> Subscriber {
+        let trimmedFirstName = firstName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedFirstName.isEmpty else {
+            throw SubscriberDraftError.firstNameMissing
+        }
+
+        let normalizedUsername = telegramUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "@", with: "")
+        guard !normalizedUsername.isEmpty else {
+            throw SubscriberDraftError.usernameMissing
+        }
+
+        let trimmedTelegramID = telegramId.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let parsedTelegramID = Int(trimmedTelegramID) else {
+            throw SubscriberDraftError.telegramIDInvalid
+        }
+
+        return Subscriber(
+            id: id ?? UUID(),
+            firstName: trimmedFirstName,
+            lastName: lastName.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty,
+            telegramUsername: normalizedUsername,
+            telegramId: parsedTelegramID,
+            startDate: startDate,
+            nextPayupDate: nextPayupDate,
+            active: active,
+            calendarEventIdentifier: calendarEventIdentifier
+        )
+    }
+}
+
+enum SubscriberDraftError: LocalizedError {
+    case firstNameMissing
+    case usernameMissing
+    case telegramIDInvalid
+
+    var errorDescription: String? {
+        switch self {
+        case .firstNameMissing:
+            return "First name required."
+        case .usernameMissing:
+            return "Telegram username required."
+        case .telegramIDInvalid:
+            return "Telegram ID must be integer."
+        }
+    }
+}
+
 extension Subscriber {
+    var normalizedTelegramUsername: String {
+        telegramUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "@", with: "")
+    }
+
     var displayName: String {
         let name = [firstName, lastName].compactMap { $0 }.joined(separator: " ")
-        return name.isEmpty ? "@\(telegramUsername)" : name
+        return name.isEmpty ? shortLabel : name
     }
 
     var shortLabel: String {
-        "@\(telegramUsername)"
-    }
-
-    var dueDate: Date? {
-        DateFormatter.isoDate.date(from: nextPayupDate)
-    }
-
-    var startDateValue: Date? {
-        DateFormatter.isoDate.date(from: startDate)
+        "@\(normalizedTelegramUsername)"
     }
 
     var dueDateLabel: String {
-        DateFormatter.uiDate.string(from: dueDate ?? .now)
+        DateFormatter.uiDate.string(from: nextPayupDate)
     }
 
     var startDateLabel: String {
-        DateFormatter.uiDate.string(from: startDateValue ?? .now)
+        DateFormatter.uiDate.string(from: startDate)
+    }
+
+    var expirationEventTitle: String {
+        "\(shortLabel) subscription expiration"
+    }
+
+    var calendarStatusLabel: String {
+        calendarEventIdentifier == nil ? "Not synced" : "Synced"
     }
 
     func matches(searchText: String) -> Bool {
@@ -66,45 +155,18 @@ extension Subscriber {
 
         let normalized = searchText.localizedLowercase
         return displayName.localizedLowercase.contains(normalized) ||
-            telegramUsername.localizedLowercase.contains(normalized) ||
+            normalizedTelegramUsername.localizedLowercase.contains(normalized) ||
             String(telegramId).contains(normalized)
     }
 }
 
-struct BootstrapResponse: Codable {
-    let generatedAt: String
-    let subscribers: [Subscriber]
-    let expiringSoon: [Subscriber]
-    let cursor: String
-}
-
-struct ConnectionSettings {
-    var baseURL: String
-    var token: String
-
-    var sanitizedBaseURL: String {
-        baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var sanitizedToken: String {
-        token.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    var canSave: Bool {
-        URL(string: sanitizedBaseURL) != nil && !sanitizedToken.isEmpty
+extension String {
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }
 
 extension DateFormatter {
-    static let isoDate: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = TimeZone(secondsFromGMT: 0)
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
     static let uiDate: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -145,5 +207,11 @@ extension Date {
         }
 
         return DateFormatter.uiDate.string(from: self) + " at " + timeLabel
+    }
+
+    func daysUntil(now: Date = .now, calendar: Calendar = .current) -> Int {
+        let startOfSelf = calendar.startOfDay(for: self)
+        let startOfNow = calendar.startOfDay(for: now)
+        return calendar.dateComponents([.day], from: startOfNow, to: startOfSelf).day ?? 0
     }
 }

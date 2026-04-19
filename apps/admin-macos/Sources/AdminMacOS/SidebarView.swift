@@ -13,7 +13,7 @@ struct SidebarView: View {
 
             if let lastError = state.lastError {
                 ContentUnavailableView {
-                    Label("Refresh failed", systemImage: "exclamationmark.triangle")
+                    Label("Action failed", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(lastError)
                         .font(.caption)
@@ -37,7 +37,7 @@ struct SidebarView: View {
                     ContentUnavailableView(
                         "No Subscribers",
                         systemImage: "person.crop.circle.badge.questionmark",
-                        description: Text("Adjust search or filter. Local data will appear here after bootstrap.")
+                        description: Text("Create subscriber or adjust search/filter.")
                     )
                 }
             }
@@ -60,7 +60,7 @@ private struct SidebarSummaryView: View {
                 SummaryPill(title: "Inactive", value: "\(state.inactiveCount)", tint: .secondary)
             }
 
-            Text("Last refresh \(state.lastRefresh)")
+            Text(state.lastUpdateLabel)
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

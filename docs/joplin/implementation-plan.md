@@ -1,38 +1,27 @@
 # Private VPN Project - Implementation Plan
 
-## Phase 1 - wiki + source of truth
+## Phase 1 - simplification
 
-- create notebook and synthesized project pages
-- keep global `index` and `log` updated
-- validate Telegram wallet callback/support surface
+- remove backend services
+- remove Telegram webhook assumptions
+- move source of truth into macOS app
 
-## Phase 2 - infra + contracts
+## Phase 2 - local CRUD
 
-- create monorepo
-- define shared API and Kafka contracts
-- add Compose stack for `postgres` and `redpanda`
-- add Dockerfile per server app
+- create local subscriber model
+- add persistence snapshot
+- implement create, read, update, delete flows
+- add filtering and search
 
-## Phase 3 - backend services
+## Phase 3 - reminders
 
-- build `payment-ingest`
-- build `subscription-service`
-- build `api-gateway`
-- build `expiry-worker`
-- add Telegram bot webhook auth
-- add wallet bridge auth
+- integrate Calendar app through `EventKit`
+- create event `@username subscription expiration`
+- attach `D-3` alert
+- remove or update event on delete/edit/inactive
 
-## Phase 4 - macOS app
+## Phase 4 - distribution
 
-- native SwiftUI shell
-- bootstrap fetch on launch
-- local state update after scheduled refresh
-- 6-hour polling loop
-- native notifications for due subscribers
-
-## Phase 5 - production hardening
-
-- replace in-memory scaffolding with real database persistence in services
-- add idempotency ledger for incoming payments
-- validate personal-wallet callback support or keep bridge adapter
-- add CI, secrets handling, and GitHub publication
+- build DMG installer
+- update release workflow
+- publish GitHub release

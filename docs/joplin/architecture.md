@@ -2,36 +2,26 @@
 
 ## Repo
 
-Monorepo.
+Monorepo, macOS app only.
 
-- `apps/payment-ingest`
-- `apps/subscription-service`
-- `apps/api-gateway`
-- `apps/expiry-worker`
 - `apps/admin-macos`
-- `packages/contracts`
-- `packages/kafka`
-- `infra/compose`
-
-## Infra
-
-- `Postgres` as source of truth
-- `Redpanda` as Kafka-compatible broker
-- Docker Compose for local/dev stack
+- `scripts/package_admin_macos.sh`
+- `.github/workflows/release.yml`
+- `docs/joplin`
 
 ## Runtime flow
 
-1. Telegram bot payments webhook or wallet bridge adapter sends payload to `payment-ingest`.
-2. `payment-ingest` emits Kafka `payments.received`.
-3. `subscription-service` updates subscriber state and emits `subscriptions.events`.
-4. `expiry-worker` emits due-date notification events once per day.
-5. `api-gateway` exposes REST snapshot to admin client.
-6. `admin-macos` polls on launch, manual refresh, and every 6 hours, updates UI, shows native notification.
+1. Friend pays manually in Telegram Wallet.
+2. Admin opens `PrivateVPNAdmin`.
+3. Admin creates or edits subscriber record manually.
+4. App stores subscriber in local JSON snapshot.
+5. App creates or updates Calendar event for expiration date.
+6. Calendar alert fires `D-3`.
 
 ## Client design
 
-- native SwiftUI first
-- no persistent socket
-- no Kafka client in app
-- no persistent open connection
-- 6-hour polling cadence for low background activity
+- native SwiftUI split view
+- local persistence
+- no backend
+- no network dependency
+- Calendar integration through `EventKit`

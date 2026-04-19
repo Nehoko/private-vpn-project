@@ -1,225 +1,128 @@
 # Private VPN Project
 
-Monorepo scaffold for subscription tracking around private VPN access.
+Native macOS admin app for manual VPN subscription tracking.
 
 Public repository: <https://github.com/Nehoko/private-vpn-project>
 
 ## Stack
 
-- `payment-ingest`: Deno/TypeScript webhook intake for Telegram wallet or bridge adapter
-- `subscription-service`: Deno/TypeScript subscriber state + renewal logic
-- `api-gateway`: Deno/TypeScript admin bootstrap + delta API
-- `expiry-worker`: Deno/TypeScript daily due-date scan
-- `admin-macos`: native SwiftUI macOS app
-- `postgres`: source of truth
-- `redpanda`: Kafka-compatible event bus
+- `admin-macos`: native `SwiftUI` app
+- local JSON persistence in Application Support
+- Apple Calendar integration through `EventKit`
+- GitHub Actions release workflow for macOS installer
 
-## Repo shape
+## Manual flow
 
-- `apps/` runnable applications
-- `packages/contracts` shared event/API contracts
-- `packages/kafka` shared Kafka helpers
-- `infra/compose` local SQL/bootstrap assets
-- `docs/joplin` synthesized wiki pages mirrored into Joplin
+1. Friend pays `5 USDT` in Telegram wallet manually.
+2. Admin opens macOS app.
+3. Admin creates or updates subscriber record manually.
+4. App stores subscriber locally.
+5. App creates or updates Calendar event:
+   - title: `@username subscription expiration`
+   - alert: `D-3`
+
+Telegram Wallet API is closed for newcomers. No backend, no webhook, no Kafka, no server sync in this version.
+
+## Features
+
+- full local CRUD for subscribers
+- native sidebar/detail macOS UI
+- active/inactive and expiring-soon filters
+- relative last-update label:
+  - `today at hh:mm:ss`
+  - `yesterday at hh:mm:ss`
+  - `n days ago at hh:mm:ss`
+- Calendar event sync on create/edit/delete
+- `Sync Calendar` action to rebuild reminders
+
+## Subscriber fields
+
+- `first_name`
+- `last_name` optional
+- `telegram_username`
+- `telegram_id`
+- `start_date`
+- `next_payup_date`
+- `active`
+
+## Calendar integration
+
+App requests Calendar permission on first reminder sync.
+
+For active subscriber app creates event in default calendar:
+
+- title: `@username subscription expiration`
+- event date: `next_payup_date`
+- alert: `3 days before`
+
+If subscriber becomes inactive or deleted, app removes linked calendar event.
 
 ## Local run
 
-1. Copy environment file.
-
-```bash
-cp .env.example .env
-```
-
-2. Start local stack.
-
-```bash
-docker compose up --build -d
-```
-
-3. Check health.
-
-```bash
-curl -s http://127.0.0.1:8080/health
-curl -s http://127.0.0.1:8081/health
-curl -s http://127.0.0.1:8082/health
-curl -s http://127.0.0.1:8083/health
-```
-
-4. Run macOS admin app.
-
 ```bash
 cd apps/admin-macos
+swift build
 swift run PrivateVPNAdmin
 ```
 
-App now shows first-launch popup for backend URL and admin token, so shell env vars are optional. App refreshes on launch, manual refresh, and every 6 hours while open.
+## Persistence
 
-## Telegram connection
-
-Project supports 2 Telegram payment intake paths:
-
-1. official Telegram Bot Payments webhook
-2. authenticated wallet bridge webhook for personal-wallet/manual adapter flows
-
-### Required Telegram env vars
-
-```env
-TELEGRAM_BRIDGE_BEARER_TOKEN=change-me-telegram-bridge
-TELEGRAM_BOT_WEBHOOK_SECRET=change-me-telegram-bot-secret
-```
-
-### Official Telegram Bot Payments
-
-Official docs:
-
-- [Telegram Bot Payments](https://core.telegram.org/bots/payments)
-- [Telegram Bot API setWebhook](https://core.telegram.org/bots/api#setwebhook)
-
-Use this when payment comes through Telegram bot invoice flow and Telegram sends `successful_payment` updates to your server.
-
-1. Create bot in `@BotFather`.
-2. Connect payments provider in `Bot Settings -> Payments`.
-3. Set webhook to payment-ingest:
-
-```bash
-export TELEGRAM_BOT_TOKEN=123456:ABCDEF
-export PUBLIC_PAYMENT_INGEST_URL=https://vpn.example.com
-export TELEGRAM_BOT_WEBHOOK_SECRET=change-me-telegram-bot-secret
-
-curl -sS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
-  -d "url=${PUBLIC_PAYMENT_INGEST_URL}/webhooks/telegram-bot" \
-  -d "secret_token=${TELEGRAM_BOT_WEBHOOK_SECRET}"
-```
-
-4. Telegram sends payment updates to `POST /webhooks/telegram-bot`.
-5. `payment-ingest` verifies header `X-Telegram-Bot-Api-Secret-Token`.
-6. Service parses `message.successful_payment` and emits `payments.received`.
-
-### Wallet bridge mode
-
-Stable official docs for direct callback on personal Telegram Wallet incoming USDT transfers were not confirmed during this implementation. Repo therefore supports bridge mode: small adapter receives wallet event, normalizes payload, sends it into `payment-ingest`.
-
-Endpoint:
+App stores local data at:
 
 ```txt
-POST /webhooks/telegram-wallet
-Authorization: Bearer $TELEGRAM_BRIDGE_BEARER_TOKEN
+~/Library/Application Support/PrivateVPNAdmin/subscribers.json
 ```
 
-Payload example:
+## Release packaging
 
-```json
-{
-  "telegram_id": 123456789,
-  "telegram_username": "friend_name",
-  "amount": 5,
-  "asset": "USDT",
-  "external_payment_id": "wallet-transfer-001",
-  "paid_at": "2026-04-18T08:15:00Z"
-}
-```
-
-Quick local test:
+Build installer locally:
 
 ```bash
-curl -sS -X POST http://127.0.0.1:8081/webhooks/telegram-wallet \
-  -H "Authorization: Bearer change-me-telegram-bridge" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "telegram_id": 123456789,
-    "telegram_username": "friend_name",
-    "amount": 5,
-    "asset": "USDT",
-    "external_payment_id": "wallet-transfer-001",
-    "paid_at": "2026-04-18T08:15:00Z"
-  }'
+./scripts/package_admin_macos.sh
 ```
+
+Output:
+
+```txt
+dist/PrivateVPNAdmin.dmg
+```
+
+## Installer
+
+GitHub release publishes unsigned drag-and-drop DMG installer.
+
+Inside DMG:
+
+- `PrivateVPNAdmin.app`
+- symlink to `/Applications`
 
 ## Workflow
 
 ```mermaid
 flowchart LR
-    A["Friend pays 5 USDT in Telegram flow"] --> B["Telegram bot webhook or wallet bridge webhook"]
-    B --> C["payment-ingest validates secret/token"]
-    C --> D["Kafka topic payments.received"]
-    D --> E["subscription-service renews subscriber and updates payup date"]
-    E --> F["api-gateway exposes latest state via /bootstrap"]
-    F --> G["admin-macos polls on launch, manual refresh, or every 6 hours"]
-    G --> H["admin-macos UI shows updated subscriber state"]
+    A["Friend pays 5 USDT manually in Telegram Wallet"] --> B["Admin opens PrivateVPNAdmin"]
+    B --> C["Admin creates or edits subscriber record"]
+    C --> D["App stores subscriber in local JSON file"]
+    D --> E["App creates or updates Calendar event"]
+    E --> F["Calendar shows @username subscription expiration with D-3 alert"]
 ```
 
-## Compose example
+## Repository shape
 
-```yaml
-services:
-  redpanda:
-    image: redpandadata/redpanda:v24.1.13
-    command:
-      - redpanda
-      - start
-      - --overprovisioned
-      - --smp
-      - "1"
-      - --memory
-      - 512M
-      - --reserve-memory
-      - 0M
-      - --node-id
-      - "0"
-      - --check=false
-      - --kafka-addr
-      - PLAINTEXT://0.0.0.0:9092
-      - --advertise-kafka-addr
-      - PLAINTEXT://redpanda:9092
-
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
-  api-gateway:
-    build:
-      context: .
-      dockerfile: apps/api-gateway/Dockerfile
-    env_file: .env
-    depends_on:
-      - redpanda
-      - postgres
-    ports:
-      - "8080:8080"
-```
-
-Full stack lives in [`docker-compose.yml`](./docker-compose.yml).
-
-## Environment example
-
-```env
-POSTGRES_DB=private_vpn
-POSTGRES_USER=private_vpn
-POSTGRES_PASSWORD=private_vpn
-DATABASE_URL=postgres://private_vpn:private_vpn@postgres:5432/private_vpn
-KAFKA_BROKERS=redpanda:9092
-PAYMENT_INGEST_PORT=8081
-SUBSCRIPTION_SERVICE_PORT=8082
-API_GATEWAY_PORT=8080
-EXPIRY_WORKER_PORT=8083
-API_GATEWAY_TOKEN=change-me
-TELEGRAM_BRIDGE_BEARER_TOKEN=change-me-telegram-bridge
-TELEGRAM_BOT_WEBHOOK_SECRET=change-me-telegram-bot-secret
-```
+- `apps/admin-macos` Swift package for app
+- `scripts/package_admin_macos.sh` local installer packaging
+- `.github/workflows/release.yml` GitHub release workflow
+- `docs/joplin` mirrored wiki pages
 
 ## Releases
 
-- Docker images publish to `ghcr.io/nehoko/private-vpn-project-<service>`
-- macOS release packaging builds `PrivateVPNAdmin.app.zip`
-- Release workflow triggers on tags like `v0.1.0`
+- GitHub releases publish `PrivateVPNAdmin.dmg`
+- workflow triggers on tags like `v0.3.0`
 
 ## Status
 
-- local functional test complete
-- public GitHub repo available
-- release workflow ready for Docker images and macOS app packaging
-- Telegram bot webhook path implemented
-- 6-hour admin polling replaces APNs wake flow
+- manual local-only architecture
+- backend removed
+- full CRUD in macOS app
+- Calendar reminder integration implemented
+- DMG installer release flow implemented
