@@ -122,7 +122,6 @@ flowchart LR
 - `apps/admin-macos` Swift package for app
 - `scripts/package_admin_macos.sh` local installer packaging
 - `.github/workflows/release.yml` GitHub release workflow
-- `docs/joplin` mirrored wiki pages
 
 ## Releases
 
