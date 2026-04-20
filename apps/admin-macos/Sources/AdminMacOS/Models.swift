@@ -21,6 +21,8 @@ struct Subscriber: Codable, Identifiable, Equatable {
     var nextPayupDate: Date
     var active: Bool
     var calendarEventIdentifier: String?
+    var vpnConfigFileName: String?
+    var vpnConfigRelativePath: String?
 }
 
 struct PersistenceSnapshot: Codable {
@@ -65,6 +67,9 @@ struct SubscriberDraft {
     var nextPayupDate = Date()
     var active = true
     var calendarEventIdentifier: String?
+    var vpnConfigFileName: String?
+    var vpnConfigRelativePath: String?
+    var pendingVPNConfigURL: URL?
 
     init() {}
 
@@ -78,6 +83,8 @@ struct SubscriberDraft {
         nextPayupDate = subscriber.nextPayupDate
         active = subscriber.active
         calendarEventIdentifier = subscriber.calendarEventIdentifier
+        vpnConfigFileName = subscriber.vpnConfigFileName
+        vpnConfigRelativePath = subscriber.vpnConfigRelativePath
     }
 
     func buildSubscriber() throws -> Subscriber {
@@ -106,7 +113,9 @@ struct SubscriberDraft {
             startDate: startDate,
             nextPayupDate: nextPayupDate,
             active: active,
-            calendarEventIdentifier: calendarEventIdentifier
+            calendarEventIdentifier: calendarEventIdentifier,
+            vpnConfigFileName: vpnConfigFileName,
+            vpnConfigRelativePath: vpnConfigRelativePath
         )
     }
 }
@@ -143,6 +152,14 @@ extension Subscriber {
         "@\(normalizedTelegramUsername)"
     }
 
+    var telegramUsernameURL: URL? {
+        URL(string: "tg://resolve?domain=\(normalizedTelegramUsername)")
+    }
+
+    var telegramIDURL: URL? {
+        URL(string: "tg://user?id=\(telegramId)")
+    }
+
     var dueDateLabel: String {
         DateFormatter.uiDate.string(from: nextPayupDate)
     }
@@ -161,6 +178,14 @@ extension Subscriber {
         }
 
         return active ? "Not synced yet" : "Reminder removed"
+    }
+
+    var vpnConfigStatusLabel: String {
+        vpnConfigFileName ?? "Not attached"
+    }
+
+    var hasVPNConfig: Bool {
+        vpnConfigRelativePath != nil
     }
 
     func matches(searchText: String) -> Bool {

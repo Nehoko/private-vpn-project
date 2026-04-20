@@ -1,7 +1,9 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SubscriberEditorView: View {
     @EnvironmentObject private var state: AppState
+    @State private var isImportingVPNConfig = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -25,6 +27,26 @@ struct SubscriberEditorView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 }
+
+                Section("VPN Configuration") {
+                    HStack {
+                        Text(state.editorDraft.vpnConfigFileName ?? "No file attached")
+                            .foregroundStyle(state.editorDraft.vpnConfigFileName == nil ? .secondary : .primary)
+                            .lineLimit(1)
+
+                        Spacer()
+
+                        Button(state.editorDraft.vpnConfigFileName == nil ? "Attach File" : "Replace File") {
+                            isImportingVPNConfig = true
+                        }
+
+                        if state.editorDraft.vpnConfigFileName != nil {
+                            Button("Remove") {
+                                state.removeEditorVPNConfig()
+                            }
+                        }
+                    }
+                }
             }
             .formStyle(.grouped)
 
@@ -43,5 +65,18 @@ struct SubscriberEditorView: View {
         }
         .padding(24)
         .frame(minWidth: 460, minHeight: 360)
+        .fileImporter(
+            isPresented: $isImportingVPNConfig,
+            allowedContentTypes: [.item],
+            allowsMultipleSelection: false
+        ) { result in
+            switch result {
+            case .success(let urls):
+                guard let url = urls.first else { return }
+                state.attachEditorVPNConfig(from: url)
+            case .failure(let error):
+                state.lastError = error.localizedDescription
+            }
+        }
     }
 }

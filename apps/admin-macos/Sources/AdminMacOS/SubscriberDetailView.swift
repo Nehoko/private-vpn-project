@@ -23,6 +23,8 @@ struct SubscriberDetailContainer: View {
 }
 
 private struct SubscriberDetailView: View {
+    @EnvironmentObject private var state: AppState
+
     let subscriber: Subscriber
     let isExpiringSoon: Bool
     let lastUpdate: String
@@ -37,7 +39,7 @@ private struct SubscriberDetailView: View {
                 ], alignment: .leading, spacing: 12) {
                     MetricCard(title: "Next Payup", value: subscriber.dueDateLabel, accent: isExpiringSoon ? .orange : .blue)
                     MetricCard(title: "Started", value: subscriber.startDateLabel, accent: .secondary)
-                    MetricCard(title: "Telegram", value: "#\(subscriber.telegramId)", accent: .mint)
+                    MetricCard(title: "Telegram", value: subscriber.shortLabel, accent: .mint)
                     MetricCard(title: "Last update", value: lastUpdate, accent: .secondary)
                 }
 
@@ -77,12 +79,40 @@ private struct SubscriberDetailView: View {
 
             DetailRow(label: "First name", value: subscriber.firstName)
             DetailRow(label: "Last name", value: subscriber.lastName ?? "—")
-            DetailRow(label: "Telegram username", value: subscriber.shortLabel)
-            DetailRow(label: "Telegram ID", value: String(subscriber.telegramId))
+            ActionRow(label: "Telegram username") {
+                Button(subscriber.shortLabel) {
+                    state.openTelegramUsername(for: subscriber)
+                }
+                .buttonStyle(.link)
+            }
+            ActionRow(label: "Telegram ID") {
+                Button(String(subscriber.telegramId)) {
+                    state.openTelegramID(for: subscriber)
+                }
+                .buttonStyle(.link)
+            }
             DetailRow(label: "Start date", value: subscriber.startDateLabel)
             DetailRow(label: "Next payup", value: subscriber.dueDateLabel)
             DetailRow(label: "Activity", value: subscriber.active ? "Active" : "Inactive")
             DetailRow(label: "Calendar", value: subscriber.calendarStatusLabel)
+            ActionRow(label: "VPN config") {
+                if subscriber.hasVPNConfig {
+                    HStack(spacing: 10) {
+                        Text(subscriber.vpnConfigStatusLabel)
+                            .textSelection(.enabled)
+                        Button("Open") {
+                            state.openVPNConfig(for: subscriber)
+                        }
+                        .buttonStyle(.link)
+                        Button("Reveal") {
+                            state.revealVPNConfig(for: subscriber)
+                        }
+                        .buttonStyle(.link)
+                    }
+                } else {
+                    Text("Not attached")
+                }
+            }
         }
         .padding(18)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -168,12 +198,28 @@ private struct DetailRow: View {
     let value: String
 
     var body: some View {
+        ActionRow(label: label) {
+            Text(value)
+                .textSelection(.enabled)
+        }
+    }
+}
+
+private struct ActionRow<Content: View>: View {
+    let label: String
+    let content: Content
+
+    init(label: String, @ViewBuilder content: () -> Content) {
+        self.label = label
+        self.content = content()
+    }
+
+    var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 18) {
             Text(label)
                 .foregroundStyle(.secondary)
                 .frame(width: 140, alignment: .leading)
-            Text(value)
-                .textSelection(.enabled)
+            content
             Spacer(minLength: 0)
         }
     }

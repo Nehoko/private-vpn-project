@@ -13,6 +13,8 @@
   - no centered title bubble
   - visible sync success banner
   - all-day same-day calendar events
+- clickable Telegram username and ID open Telegram chat
+- per-subscriber VPN configuration attachment stored locally
 - release packaging now builds macOS DMG installer
 
 ## Required subscriber fields
@@ -29,6 +31,7 @@
 
 - app is source of truth
 - persistence path: `~/Library/Application Support/PrivateVPNAdmin/subscribers.json`
+- VPN config path: `~/Library/Application Support/PrivateVPNAdmin/vpn-configs/`
 - Calendar app is reminder system
 - each active subscriber maps to one Calendar event
 - event title format: `@username subscription expiration`

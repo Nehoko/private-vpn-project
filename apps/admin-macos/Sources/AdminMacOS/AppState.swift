@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 @MainActor
@@ -127,8 +128,15 @@ final class AppState: ObservableObject {
         do {
             let isCreating = editorMode == .create
             var subscriber = try editorDraft.buildSubscriber()
+            let previousSubscriber = subscribers.first(where: { $0.id == subscriber.id })
             let existingEventID = subscribers.first(where: { $0.id == subscriber.id })?.calendarEventIdentifier
             subscriber.calendarEventIdentifier = existingEventID ?? subscriber.calendarEventIdentifier
+
+            if let pendingVPNConfigURL = editorDraft.pendingVPNConfigURL {
+                let copiedConfig = try store.copyVPNConfig(from: pendingVPNConfigURL, for: subscriber.id)
+                subscriber.vpnConfigFileName = copiedConfig.fileName
+                subscriber.vpnConfigRelativePath = copiedConfig.relativePath
+            }
 
             do {
                 if subscriber.active {
@@ -140,6 +148,10 @@ final class AppState: ObservableObject {
             } catch {
                 subscriber.calendarEventIdentifier = nil
                 lastError = "Subscriber saved, but Calendar sync failed: \(error.localizedDescription)"
+            }
+
+            if previousSubscriber?.vpnConfigRelativePath != subscriber.vpnConfigRelativePath {
+                try store.removeVPNConfig(relativePath: previousSubscriber?.vpnConfigRelativePath)
             }
 
             upsert(subscriber)
@@ -175,6 +187,7 @@ final class AppState: ObservableObject {
             } catch {
                 lastError = "Subscriber deleted, but Calendar cleanup failed: \(error.localizedDescription)"
             }
+            try store.removeVPNConfig(relativePath: subscriber.vpnConfigRelativePath)
             subscribers.removeAll { $0.id == subscriber.id }
             try persist()
             syncSelection()
@@ -218,6 +231,58 @@ final class AppState: ObservableObject {
 
     func dismissBanner() {
         bannerMessage = nil
+    }
+
+    func attachEditorVPNConfig(from sourceURL: URL) {
+        editorDraft.pendingVPNConfigURL = sourceURL
+        editorDraft.vpnConfigFileName = sourceURL.lastPathComponent
+        if editorDraft.vpnConfigRelativePath == nil {
+            editorDraft.vpnConfigRelativePath = "pending"
+        }
+    }
+
+    func removeEditorVPNConfig() {
+        editorDraft.pendingVPNConfigURL = nil
+        editorDraft.vpnConfigFileName = nil
+        editorDraft.vpnConfigRelativePath = nil
+    }
+
+    func openTelegramUsername(for subscriber: Subscriber) {
+        guard let url = subscriber.telegramUsernameURL else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    func openTelegramID(for subscriber: Subscriber) {
+        guard let url = subscriber.telegramIDURL else {
+            return
+        }
+        NSWorkspace.shared.open(url)
+    }
+
+    func openVPNConfig(for subscriber: Subscriber) {
+        do {
+            guard let url = try store.attachmentURL(relativePath: subscriber.vpnConfigRelativePath) else {
+                lastError = "VPN configuration file missing."
+                return
+            }
+            NSWorkspace.shared.open(url)
+        } catch {
+            lastError = error.localizedDescription
+        }
+    }
+
+    func revealVPNConfig(for subscriber: Subscriber) {
+        do {
+            guard let url = try store.attachmentURL(relativePath: subscriber.vpnConfigRelativePath) else {
+                lastError = "VPN configuration file missing."
+                return
+            }
+            NSWorkspace.shared.activateFileViewerSelecting([url])
+        } catch {
+            lastError = error.localizedDescription
+        }
     }
 
     func selectFirstVisibleSubscriber() {

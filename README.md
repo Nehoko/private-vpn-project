@@ -28,6 +28,8 @@ Telegram Wallet API is closed for newcomers. No backend, no webhook, no Kafka, n
 
 - full local CRUD for subscribers
 - native sidebar/detail macOS UI
+- clickable Telegram username and Telegram ID that open Telegram chat
+- per-subscriber VPN configuration attachment
 - active/inactive and expiring-soon filters
 - relative last-update label:
   - `today at hh:mm:ss`
@@ -73,6 +75,12 @@ App stores local data at:
 
 ```txt
 ~/Library/Application Support/PrivateVPNAdmin/subscribers.json
+```
+
+VPN configuration attachments stored under:
+
+```txt
+~/Library/Application Support/PrivateVPNAdmin/vpn-configs/
 ```
 
 ## Release packaging
