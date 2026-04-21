@@ -99,12 +99,94 @@ dist/PrivateVPNAdmin.dmg
 
 ## Installer
 
-GitHub release publishes unsigned drag-and-drop DMG installer.
+GitHub release currently publishes unsigned drag-and-drop DMG installer.
 
 Inside DMG:
 
 - `PrivateVPNAdmin.app`
 - symlink to `/Applications`
+
+## macOS signing
+
+If you download unsigned build on another Mac, Gatekeeper may block launch with errors like:
+
+- `"PrivateVPNAdmin.app" can't be opened because Apple cannot check it for malicious software.`
+- `"PrivateVPNAdmin.app" is damaged and can't be opened.`
+
+### Quick local workaround for testing only
+
+Use this only on a Mac you control. This is not proper distribution signing.
+
+1. Copy app into `/Applications`.
+2. Remove quarantine flag.
+3. Add ad-hoc signature.
+
+```bash
+xattr -dr com.apple.quarantine /Applications/PrivateVPNAdmin.app
+codesign --force --deep --sign - /Applications/PrivateVPNAdmin.app
+```
+
+### Proper fix for release builds
+
+To ship app that opens normally on other Macs, sign app bundle with Developer ID certificate, then notarize DMG.
+
+1. Join Apple Developer Program.
+2. Create or download `Developer ID Application` certificate into Keychain Access.
+3. Verify certificate name:
+
+```bash
+security find-identity -v -p codesigning
+```
+
+4. Export signer identity into env var:
+
+```bash
+export APP_SIGN_IDENTITY="Developer ID Application: YOUR NAME (TEAMID)"
+```
+
+5. Build app:
+
+```bash
+./scripts/package_admin_macos.sh
+```
+
+6. Sign app bundle before creating final DMG:
+
+```bash
+codesign \
+  --force \
+  --deep \
+  --options runtime \
+  --sign "$APP_SIGN_IDENTITY" \
+  dist/PrivateVPNAdmin.app
+```
+
+7. Rebuild DMG from signed app or create DMG after signing.
+8. Notarize DMG:
+
+```bash
+xcrun notarytool submit dist/PrivateVPNAdmin.dmg \
+  --apple-id "YOUR_APPLE_ID" \
+  --team-id "YOUR_TEAM_ID" \
+  --password "YOUR_APP_SPECIFIC_PASSWORD" \
+  --wait
+```
+
+9. Staple notarization ticket:
+
+```bash
+xcrun stapler staple dist/PrivateVPNAdmin.dmg
+```
+
+10. Verify result:
+
+```bash
+spctl -a -vvv dist/PrivateVPNAdmin.app
+spctl -a -vvv dist/PrivateVPNAdmin.dmg
+codesign --verify --deep --strict --verbose=2 dist/PrivateVPNAdmin.app
+```
+
+Without Developer ID signing and notarization, GitHub release artifacts may work only after manual quarantine removal on each target Mac.
 
 ## Workflow
 
